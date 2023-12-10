@@ -22,6 +22,10 @@ import freemarker.template.Template;
 import freemarker.template.TemplateException;
 import freemarker.template.TemplateExceptionHandler;
 
+import org.mindrot.jbcrypt.BCrypt;
+import java.sql.PreparedStatement;
+
+
 @SuppressWarnings("serial")
 public class AppServlet extends HttpServlet {
 
@@ -34,10 +38,23 @@ public class AppServlet extends HttpServlet {
 
   @Override
   public void init() throws ServletException {
-    configureTemplateEngine();
-    connectToDatabase();
+      configureTemplateEngine();
+      connectToDatabase();
+      /*
+        The following code block has been commented out to prevent the passwords from being hashed multiple times.
+        If you want to re-hash the passwords, uncomment the code block, run the servlet, and then comment it out again.
+        It has been run once at the start, when the passwords were not hashed.
+      */
+      /*
+      try {
+          hashExistingPasswords(); // This will hash the existing plain text passwords
+          // After running once and verifying the passwords are hashed, comment out the above line.
+      } catch (SQLException e) {
+          // Log the exception, and consider re-throwing a ServletException if you want to stop the servlet from initializing
+          throw new ServletException("Failed to hash existing passwords", e);
+      }
+      */
   }
-
   private void configureTemplateEngine() throws ServletException {
     try {
       fm.setDirectoryForTemplateLoading(new File("./templates"));
@@ -103,11 +120,15 @@ public class AppServlet extends HttpServlet {
   }
 
   private boolean authenticated(String username, String password) throws SQLException {
-    String query = String.format(AUTH_QUERY, username, password);
-    try (Statement stmt = database.createStatement()) {
-      ResultSet results = stmt.executeQuery(query);
-      return results.next();
-    }
+      String query = String.format("SELECT password FROM user WHERE username='%s'", username);
+      try (Statement stmt = database.createStatement()) {
+          ResultSet results = stmt.executeQuery(query);
+          if (results.next()) {
+              String storedHash = results.getString("password");
+              return BCrypt.checkpw(password, storedHash);
+          }
+          return false;
+      }
   }
 
   private List<Record> searchResults(String surname) throws SQLException {
@@ -127,5 +148,28 @@ public class AppServlet extends HttpServlet {
       }
     }
     return records;
+  }
+
+  private void hashExistingPasswords() throws SQLException {
+    // SQL to select all users
+    String selectQuery = "SELECT id, password FROM user";
+    // SQL to update a user's password
+    String updateQuery = "UPDATE user SET password = ? WHERE id = ?";
+
+    try (Statement selectStmt = database.createStatement();
+         ResultSet rs = selectStmt.executeQuery(selectQuery)) {
+        
+        while (rs.next()) {
+            int userId = rs.getInt("id");
+            String plainPassword = rs.getString("password");
+            String hashedPassword = BCrypt.hashpw(plainPassword, BCrypt.gensalt());
+
+            try (PreparedStatement updateStmt = database.prepareStatement(updateQuery)) {
+                updateStmt.setString(1, hashedPassword);
+                updateStmt.setInt(2, userId);
+                updateStmt.executeUpdate();
+            }
+        }
+    }
   }
 }
