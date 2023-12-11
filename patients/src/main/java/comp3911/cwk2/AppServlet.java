@@ -22,7 +22,6 @@ import freemarker.template.Template;
 import freemarker.template.TemplateException;
 import freemarker.template.TemplateExceptionHandler;
 
-import org.mindrot.jbcrypt.BCrypt;
 import java.sql.PreparedStatement;
 
 
@@ -38,23 +37,10 @@ public class AppServlet extends HttpServlet {
 
   @Override
   public void init() throws ServletException {
-      configureTemplateEngine();
-      connectToDatabase();
-      /*
-        The following code block has been commented out to prevent the passwords from being hashed multiple times.
-        If you want to re-hash the passwords, uncomment the code block, run the servlet, and then comment it out again.
-        It has been run once at the start, when the passwords were not hashed.
-      */
-      /*
-      try {
-          hashExistingPasswords(); // This will hash the existing plain text passwords
-          // After running once and verifying the passwords are hashed, comment out the above line.
-      } catch (SQLException e) {
-          // Log the exception, and consider re-throwing a ServletException if you want to stop the servlet from initializing
-          throw new ServletException("Failed to hash existing passwords", e);
-      }
-      */
+    configureTemplateEngine();
+    connectToDatabase();
   }
+
   private void configureTemplateEngine() throws ServletException {
     try {
       fm.setDirectoryForTemplateLoading(new File("./templates"));
@@ -115,79 +101,41 @@ public class AppServlet extends HttpServlet {
       response.setStatus(HttpServletResponse.SC_OK);
     }
     catch (Exception error) {
+      
       response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
     }
   }
 
   private boolean authenticated(String username, String password) throws SQLException {
-      String query = String.format("SELECT password FROM user WHERE username='%s'", username);
-      try (Statement stmt = database.createStatement()) {
-          ResultSet results = stmt.executeQuery(query);
-          if (results.next()) {
-              String storedHash = results.getString("password");
-              return BCrypt.checkpw(password, storedHash);
-          }
-          return false;
-      }
+    String query = "select * from user where username=? and password=?";
+    try (PreparedStatement pstmt = database.prepareStatement(query)) {
+        pstmt.setString(1, username);
+        pstmt.setString(2, password);
+        ResultSet results = pstmt.executeQuery();
+        return results.next();
+    }
   }
+
 
   private List<Record> searchResults(String surname) throws SQLException {
     List<Record> records = new ArrayList<>();
-    String query = String.format(SEARCH_QUERY, surname);
-    try (Statement stmt = database.createStatement()) {
-      ResultSet results = stmt.executeQuery(query);
-      while (results.next()) {
-        Record rec = new Record();
-        rec.setSurname(results.getString(2));
-        rec.setForename(results.getString(3));
-        rec.setAddress(results.getString(4));
-        rec.setDateOfBirth(results.getString(5));
-        rec.setDoctorId(results.getString(6));
-        rec.setDiagnosis(results.getString(7));
-        records.add(rec);
-      }
+    String query = "select * from patient where surname=? collate nocase";
+    try (PreparedStatement pstmt = database.prepareStatement(query)) {
+        pstmt.setString(1, surname);
+        ResultSet results = pstmt.executeQuery();
+        while (results.next()) {
+            Record rec = new Record();
+            rec.setSurname(results.getString("surname"));
+            rec.setForename(results.getString("forename"));
+            rec.setAddress(results.getString("address"));
+            rec.setDateOfBirth(results.getString("born")); 
+            rec.setDoctorId(results.getString("gp_id")); 
+            rec.setDiagnosis(results.getString("treated_for")); 
+            records.add(rec);
+        }
     }
     return records;
   }
 
-  /**
- * This method hashes existing plain text passwords and updates them in the database.
- * It follows these steps:
- * 1. Prepare SQL queries to select all users and their passwords and to update a user's password.
- * 2. Use a try-with-resources block to create a statement for executing the select query and initialize a ResultSet.
- * 3. Iterate through the ResultSet to process each user's data.
- * 4. For each user, extract the user's ID and plain text password from the ResultSet.
- * 5. Hash the plain text password using the BCrypt library's hashpw() method to securely hash the password.
- * 6. Create a prepared statement for the update query with placeholders for the hashed password and user ID.
- * 7. Set the hashed password and user ID in the prepared statement.
- * 8. Execute the update statement to replace the plain text password with the hashed one in the database.
- *
- * @throws SQLException if a database access error occurs
- */
-  private void hashExistingPasswords() throws SQLException {
-    // SQL to select all users
-    String selectQuery = "SELECT id, password FROM user";
-    // SQL to update a user's password
-    String updateQuery = "UPDATE user SET password = ? WHERE id = ?";
-
-    try (Statement selectStmt = database.createStatement();
-         ResultSet rs = selectStmt.executeQuery(selectQuery)) {
-        
-        while (rs.next()) {
-          // Get the user's ID and plain text password
-          int userId = rs.getInt("id");
-          String plainPassword = rs.getString("password");
-          // Hash the plain text password using BCrypt
-          String hashedPassword = BCrypt.hashpw(plainPassword, BCrypt.gensalt());
-
-          try (PreparedStatement updateStmt = database.prepareStatement(updateQuery)) {
-            // Set the hashed password and user ID in the update statement
-            updateStmt.setString(1, hashedPassword);
-            updateStmt.setInt(2, userId);
-            // Execute the update statement to replace the plain text password with the hashed one
-            updateStmt.executeUpdate();
-          }
-      }
-    }
-  }
 }
+//'OR '1'='1
