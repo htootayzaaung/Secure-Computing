@@ -25,6 +25,9 @@ import freemarker.template.TemplateException;
 import freemarker.template.TemplateExceptionHandler;
 
 
+import java.sql.PreparedStatement;
+
+
 import java.util.UUID;
 
 @SuppressWarnings("serial")
@@ -122,34 +125,41 @@ public class AppServlet extends HttpServlet {
       response.setStatus(HttpServletResponse.SC_OK);
     }
     catch (Exception error) {
+      
       response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
     }
   }
 
   private boolean authenticated(String username, String password) throws SQLException {
-    String query = String.format(AUTH_QUERY, username, password);
-    try (Statement stmt = database.createStatement()) {
-      ResultSet results = stmt.executeQuery(query);
-      return results.next();
+    String query = "select * from user where username=? and password=?";
+    try (PreparedStatement pstmt = database.prepareStatement(query)) {
+        pstmt.setString(1, username);
+        pstmt.setString(2, password);
+        ResultSet results = pstmt.executeQuery();
+        return results.next();
     }
   }
 
+
   private List<Record> searchResults(String surname) throws SQLException {
     List<Record> records = new ArrayList<>();
-    String query = String.format(SEARCH_QUERY, surname);
-    try (Statement stmt = database.createStatement()) {
-      ResultSet results = stmt.executeQuery(query);
-      while (results.next()) {
-        Record rec = new Record();
-        rec.setSurname(results.getString(2));
-        rec.setForename(results.getString(3));
-        rec.setAddress(results.getString(4));
-        rec.setDateOfBirth(results.getString(5));
-        rec.setDoctorId(results.getString(6));
-        rec.setDiagnosis(results.getString(7));
-        records.add(rec);
-      }
+    String query = "select * from patient where surname=? collate nocase";
+    try (PreparedStatement pstmt = database.prepareStatement(query)) {
+        pstmt.setString(1, surname);
+        ResultSet results = pstmt.executeQuery();
+        while (results.next()) {
+            Record rec = new Record();
+            rec.setSurname(results.getString("surname"));
+            rec.setForename(results.getString("forename"));
+            rec.setAddress(results.getString("address"));
+            rec.setDateOfBirth(results.getString("born")); 
+            rec.setDoctorId(results.getString("gp_id")); 
+            rec.setDiagnosis(results.getString("treated_for")); 
+            records.add(rec);
+        }
     }
     return records;
   }
+
 }
+//'OR '1'='1
