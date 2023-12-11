@@ -16,15 +16,16 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
+
 
 import freemarker.template.Configuration;
 import freemarker.template.Template;
 import freemarker.template.TemplateException;
 import freemarker.template.TemplateExceptionHandler;
 
-import org.mindrot.jbcrypt.BCrypt;
-import java.sql.PreparedStatement;
 
+import java.util.UUID;
 
 @SuppressWarnings("serial")
 public class AppServlet extends HttpServlet {
@@ -38,23 +39,10 @@ public class AppServlet extends HttpServlet {
 
   @Override
   public void init() throws ServletException {
-      configureTemplateEngine();
-      connectToDatabase();
-      /*
-        The following code block has been commented out to prevent the passwords from being hashed multiple times.
-        If you want to re-hash the passwords, uncomment the code block, run the servlet, and then comment it out again.
-        It has been run once at the start, when the passwords were not hashed.
-      */
-      /*
-      try {
-          hashExistingPasswords(); // This will hash the existing plain text passwords
-          // After running once and verifying the passwords are hashed, comment out the above line.
-      } catch (SQLException e) {
-          // Log the exception, and consider re-throwing a ServletException if you want to stop the servlet from initializing
-          throw new ServletException("Failed to hash existing passwords", e);
-      }
-      */
+    configureTemplateEngine();
+    connectToDatabase();
   }
+
   private void configureTemplateEngine() throws ServletException {
     try {
       fm.setDirectoryForTemplateLoading(new File("./templates"));
@@ -79,17 +67,26 @@ public class AppServlet extends HttpServlet {
 
   @Override
   protected void doGet(HttpServletRequest request, HttpServletResponse response)
-   throws ServletException, IOException {
-    try {
-      Template template = fm.getTemplate("login.html");
-      template.process(null, response.getWriter());
-      response.setContentType("text/html");
-      response.setStatus(HttpServletResponse.SC_OK);
-    }
-    catch (TemplateException error) {
-      response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-    }
+      throws ServletException, IOException {
+      HttpSession session = request.getSession();
+      if (session.getAttribute("csrfToken") == null) {
+          session.setAttribute("csrfToken", UUID.randomUUID().toString());
+      }
+      
+      Map<String, Object> model = new HashMap<>();
+      model.put("csrfToken", session.getAttribute("csrfToken"));
+  
+      try {
+          Template template = fm.getTemplate("login.html");
+          template.process(model, response.getWriter()); // Pass model here
+          response.setContentType("text/html");
+          response.setStatus(HttpServletResponse.SC_OK);
+      }
+      catch (TemplateException error) {
+          response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+      }
   }
+  
 
   @Override
   protected void doPost(HttpServletRequest request, HttpServletResponse response)
@@ -98,6 +95,16 @@ public class AppServlet extends HttpServlet {
     String username = request.getParameter("username");
     String password = request.getParameter("password");
     String surname = request.getParameter("surname");
+
+    HttpSession session = request.getSession();
+    String sessionToken = (String) session.getAttribute("csrfToken");
+    String requestToken = request.getParameter("csrfToken");
+
+    if (sessionToken == null || !sessionToken.equals(requestToken)) {
+        response.sendError(HttpServletResponse.SC_FORBIDDEN, "CSRF token does not match");
+        return;
+    }
+
 
     try {
       if (authenticated(username, password)) {
@@ -120,15 +127,11 @@ public class AppServlet extends HttpServlet {
   }
 
   private boolean authenticated(String username, String password) throws SQLException {
-      String query = String.format("SELECT password FROM user WHERE username='%s'", username);
-      try (Statement stmt = database.createStatement()) {
-          ResultSet results = stmt.executeQuery(query);
-          if (results.next()) {
-              String storedHash = results.getString("password");
-              return BCrypt.checkpw(password, storedHash);
-          }
-          return false;
-      }
+    String query = String.format(AUTH_QUERY, username, password);
+    try (Statement stmt = database.createStatement()) {
+      ResultSet results = stmt.executeQuery(query);
+      return results.next();
+    }
   }
 
   private List<Record> searchResults(String surname) throws SQLException {
@@ -148,46 +151,5 @@ public class AppServlet extends HttpServlet {
       }
     }
     return records;
-  }
-
-  /**
- * This method hashes existing plain text passwords and updates them in the database.
- * It follows these steps:
- * 1. Prepare SQL queries to select all users and their passwords and to update a user's password.
- * 2. Use a try-with-resources block to create a statement for executing the select query and initialize a ResultSet.
- * 3. Iterate through the ResultSet to process each user's data.
- * 4. For each user, extract the user's ID and plain text password from the ResultSet.
- * 5. Hash the plain text password using the BCrypt library's hashpw() method to securely hash the password.
- * 6. Create a prepared statement for the update query with placeholders for the hashed password and user ID.
- * 7. Set the hashed password and user ID in the prepared statement.
- * 8. Execute the update statement to replace the plain text password with the hashed one in the database.
- *
- * @throws SQLException if a database access error occurs
- */
-  private void hashExistingPasswords() throws SQLException {
-    // SQL to select all users
-    String selectQuery = "SELECT id, password FROM user";
-    // SQL to update a user's password
-    String updateQuery = "UPDATE user SET password = ? WHERE id = ?";
-
-    try (Statement selectStmt = database.createStatement();
-         ResultSet rs = selectStmt.executeQuery(selectQuery)) {
-        
-        while (rs.next()) {
-          // Get the user's ID and plain text password
-          int userId = rs.getInt("id");
-          String plainPassword = rs.getString("password");
-          // Hash the plain text password using BCrypt
-          String hashedPassword = BCrypt.hashpw(plainPassword, BCrypt.gensalt());
-
-          try (PreparedStatement updateStmt = database.prepareStatement(updateQuery)) {
-            // Set the hashed password and user ID in the update statement
-            updateStmt.setString(1, hashedPassword);
-            updateStmt.setInt(2, userId);
-            // Execute the update statement to replace the plain text password with the hashed one
-            updateStmt.executeUpdate();
-          }
-      }
-    }
   }
 }
