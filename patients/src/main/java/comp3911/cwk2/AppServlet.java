@@ -16,14 +16,19 @@ import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
+import javax.servlet.http.HttpSession;
+
 
 import freemarker.template.Configuration;
 import freemarker.template.Template;
 import freemarker.template.TemplateException;
 import freemarker.template.TemplateExceptionHandler;
 
+
 import java.sql.PreparedStatement;
 
+
+import java.util.UUID;
 
 @SuppressWarnings("serial")
 public class AppServlet extends HttpServlet {
@@ -65,17 +70,26 @@ public class AppServlet extends HttpServlet {
 
   @Override
   protected void doGet(HttpServletRequest request, HttpServletResponse response)
-   throws ServletException, IOException {
-    try {
-      Template template = fm.getTemplate("login.html");
-      template.process(null, response.getWriter());
-      response.setContentType("text/html");
-      response.setStatus(HttpServletResponse.SC_OK);
-    }
-    catch (TemplateException error) {
-      response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-    }
+      throws ServletException, IOException {
+      HttpSession session = request.getSession();
+      if (session.getAttribute("csrfToken") == null) {
+          session.setAttribute("csrfToken", UUID.randomUUID().toString());
+      }
+      
+      Map<String, Object> model = new HashMap<>();
+      model.put("csrfToken", session.getAttribute("csrfToken"));
+  
+      try {
+          Template template = fm.getTemplate("login.html");
+          template.process(model, response.getWriter()); // Pass model here
+          response.setContentType("text/html");
+          response.setStatus(HttpServletResponse.SC_OK);
+      }
+      catch (TemplateException error) {
+          response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
+      }
   }
+  
 
   @Override
   protected void doPost(HttpServletRequest request, HttpServletResponse response)
@@ -84,6 +98,16 @@ public class AppServlet extends HttpServlet {
     String username = request.getParameter("username");
     String password = request.getParameter("password");
     String surname = request.getParameter("surname");
+
+    HttpSession session = request.getSession();
+    String sessionToken = (String) session.getAttribute("csrfToken");
+    String requestToken = request.getParameter("csrfToken");
+
+    if (sessionToken == null || !sessionToken.equals(requestToken)) {
+        response.sendError(HttpServletResponse.SC_FORBIDDEN, "CSRF token does not match");
+        return;
+    }
+
 
     try {
       if (authenticated(username, password)) {
