@@ -150,6 +150,20 @@ public class AppServlet extends HttpServlet {
     return records;
   }
 
+  /**
+ * This method hashes existing plain text passwords and updates them in the database.
+ * It follows these steps:
+ * 1. Prepare SQL queries to select all users and their passwords and to update a user's password.
+ * 2. Use a try-with-resources block to create a statement for executing the select query and initialize a ResultSet.
+ * 3. Iterate through the ResultSet to process each user's data.
+ * 4. For each user, extract the user's ID and plain text password from the ResultSet.
+ * 5. Hash the plain text password using the BCrypt library's hashpw() method to securely hash the password.
+ * 6. Create a prepared statement for the update query with placeholders for the hashed password and user ID.
+ * 7. Set the hashed password and user ID in the prepared statement.
+ * 8. Execute the update statement to replace the plain text password with the hashed one in the database.
+ *
+ * @throws SQLException if a database access error occurs
+ */
   private void hashExistingPasswords() throws SQLException {
     // SQL to select all users
     String selectQuery = "SELECT id, password FROM user";
@@ -160,16 +174,20 @@ public class AppServlet extends HttpServlet {
          ResultSet rs = selectStmt.executeQuery(selectQuery)) {
         
         while (rs.next()) {
-            int userId = rs.getInt("id");
-            String plainPassword = rs.getString("password");
-            String hashedPassword = BCrypt.hashpw(plainPassword, BCrypt.gensalt());
+          // Get the user's ID and plain text password
+          int userId = rs.getInt("id");
+          String plainPassword = rs.getString("password");
+          // Hash the plain text password using BCrypt
+          String hashedPassword = BCrypt.hashpw(plainPassword, BCrypt.gensalt());
 
-            try (PreparedStatement updateStmt = database.prepareStatement(updateQuery)) {
-                updateStmt.setString(1, hashedPassword);
-                updateStmt.setInt(2, userId);
-                updateStmt.executeUpdate();
-            }
-        }
+          try (PreparedStatement updateStmt = database.prepareStatement(updateQuery)) {
+            // Set the hashed password and user ID in the update statement
+            updateStmt.setString(1, hashedPassword);
+            updateStmt.setInt(2, userId);
+            // Execute the update statement to replace the plain text password with the hashed one
+            updateStmt.executeUpdate();
+          }
+      }
     }
   }
 }
