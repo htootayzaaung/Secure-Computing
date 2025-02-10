@@ -17,10 +17,10 @@ Passwords were stored in plain text within the database, posing a significant se
 ### 1. Fixes Implemented for SQL Injection Vulnerability
 To address the SQL Injection vulnerability, I refactored SQL queries to use **prepared statements**. This prevented user inputs from being directly concatenated into SQL queries, mitigating the risk of malicious injection attacks. Post-implementation testing confirmed that injection attempts were no longer successful.
 
-### 2. Fixes Implemented for CSRF (Completed by Other Team Members)
+### 2. Fixes Implemented for CSRF
 CSRF protection was implemented by modifying **doGet()** and **doPost()** methods to include **CSRF tokens**. The token was initialized during login and verified before processing sensitive requests.
 
-### 3. Fixes Implemented for Lack of Data Encryption (Completed by Other Team Members)
+### 3. Fixes Implemented for Lack of Data Encryption
 To enhance password security, **bcrypt hashing** was integrated to replace plaintext storage. The database schema was updated to store encrypted hashes, improving protection against brute-force attacks.
 
 ## Testing and Validation
